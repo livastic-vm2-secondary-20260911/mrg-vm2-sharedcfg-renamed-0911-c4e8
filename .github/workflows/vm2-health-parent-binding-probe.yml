@@ -1,0 +1,37 @@
+name: VM2 Health Parent Binding Probe
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read-only parent-binding A/B
+        env:
+          GH_TOKEN_VM2: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          VICTIM_OWNER='livastic-vm2-lab-20260911-g3a9'
+          VICTIM_REPO='mrg-vm2-migration-provenance-0912-n4q7'
+          DECOY_OWNER='livastic-vm2-secondary-20260911'
+          DECOY_REPO='mrg-vm2-sharedcfg-renamed-0911-c4e8'
+          TEST_ID='1843c5c5-c900-5c18-8c26-81eb2fbd5a44'
+          INVALID_ID='00000000-0000-5000-8000-000000000001'
+          probe() {
+            label="$1"; url="$2"; auth="$3"; f="$(mktemp)"
+            code=$(curl -sS --max-time 20 -o "$f" -w '%{http_code}' -H "Authorization: Bearer $auth" -H 'Accept: application/json' "$url" || true)
+            bytes=$(wc -c < "$f" | tr -d ' ')
+            hash=$(sha256sum "$f" | awk '{print $1}')
+            echo "$label status=$code bytes=$bytes sha256=$hash"
+            rm -f "$f"
+          }
+          probe github_own "https://api.github.com/repos/$GITHUB_REPOSITORY" "$GH_TOKEN_VM2"
+          probe github_private_victim "https://api.github.com/repos/$VICTIM_OWNER/$VICTIM_REPO" "$GH_TOKEN_VM2"
+          BASE='https://api.mergify.com/v1/ci'
+          probe mergify_direct_victim "$BASE/$VICTIM_OWNER/repositories/$VICTIM_REPO/tests/$TEST_ID/health-transitions" "$GH_TOKEN_VM2"
+          probe mergify_decoy_foreign_child "$BASE/$DECOY_OWNER/repositories/$DECOY_REPO/tests/$TEST_ID/health-transitions" "$GH_TOKEN_VM2"
+          probe mergify_decoy_invalid_child "$BASE/$DECOY_OWNER/repositories/$DECOY_REPO/tests/$INVALID_ID/health-transitions" "$GH_TOKEN_VM2"
+
